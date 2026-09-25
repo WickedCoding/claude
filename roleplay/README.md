@@ -1,45 +1,34 @@
 # Roleplay - AI Character Building Suite
 
-Tools, agents, and skills for immersive roleplay and AI character development.
+Skills for creating and managing HammerAI roleplay characters (`.character` files).
 
-## Overview
+## Skills
 
-The Roleplay plugin provides specialized capabilities for creating, developing, and managing AI characters and roleplay scenarios. Whether building complex character personalities, crafting immersive narratives, or generating structured character profiles, this suite offers the tools needed for rich storytelling experiences.
+- **character-builder**: creative partner for building characters. It offers a guided phase-by-phase mode, a quick-draft mode for rich concepts, and a refine mode for improving existing characters, including lorebook design.
+- **character-file**: technical operations on `.character` files: read, validate, write, and add/edit/delete sections. A bundled script (`scripts/validate_character.py`) checks format and section length limits exactly.
 
-## Features
+The builder never touches the filesystem. All reads, writes, and validation go through character-file.
 
-### Available Now
+### Validating a file directly
 
-- **Character File Operations** - Technical skill for reading, writing, and manipulating `.character` files used in roleplay AI systems
-  - Read and parse character files
-  - Create new character files from structured data
-  - Add, edit, and delete sections
-  - Validate character file format
-  - Supports standard character format with sections: Personality, Scenario, Example dialogs, First message, System Prompt
+```bash
+python3 roleplay/skills/character-file/scripts/validate_character.py "path/to/Name.character"
+```
 
-### Coming Soon
-
-- **Character Building Agents** - Specialized assistants for creating detailed character profiles, personalities, and backstories
-- **Narrative Tools** - Scene narration, dialogue coaching, and immersive storytelling support
-- **Character Generation** - Structured character sheet creation with stats, traits, and backgrounds
-- **Roleplay Direction** - Context-aware output styles for maintaining roleplay immersion
+The character name is the filename. Exit code 1 means the file has errors.
 
 ## Installation
-
-This plugin is part of the local Claude Code marketplace. Install via:
 
 ```bash
 /plugin marketplace add https://github.com/WickedSik/claude.git
 /plugin install roleplay@wickedsik
 ```
 
-## Development Status
+## Planned
 
-**Current Phase**: Early Development
-**Version**: 0.1.0 (Pre-release)
-
-The plugin now includes the Character File Operations skill for technical manipulation of `.character` files. Additional character building agents and creative tools are planned for future releases.
+- Narrative tools: scene narration and dialogue coaching
+- Roleplay output styles for staying in character
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+MIT, see [LICENSE](../LICENSE).

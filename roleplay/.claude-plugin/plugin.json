@@ -1,7 +1,7 @@
 {
 	"name": "roleplay",
 	"description": "Tools, agents and skills for roleplay and AI character building",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"author": {
 		"name": "Jurriën Dokter",
 		"email": "jurriendokter@gmail.com"

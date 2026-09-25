@@ -1,532 +1,199 @@
 ---
-name: Character File Operations
-description: Read, write, and manipulate .character files for roleplay AI character definitions
+name: character-file
+description: Read, validate, create, and edit HammerAI .character files (roleplay AI character definitions). Use when asked to open or parse a .character file, check it against the section length limits, list/add/edit/delete a section, or write a character file handed over by character-builder. Technical operations only, no creative guidance.
+allowed-tools: Bash(python3 "${CLAUDE_SKILL_DIR}/scripts/validate_character.py" *)
 ---
 
-# Character File Operations Skill
+# Character File Operations
 
-Technical file manipulation tool for `.character` files used in roleplay AI character definitions. This skill provides low-level operations for reading, writing, adding sections, and altering content in structured character files.
+Technical tool for `.character` files used by HammerAI roleplay characters. It reads, writes, validates, and edits sections. It never decides *what* a character should say; that belongs to the `character-builder` skill.
 
-## Purpose
+## When to use
 
-**When to use this skill:**
-- Read or parse existing `.character` files
-- Create new `.character` files from structured data
-- Add new sections to existing character files
-- Edit content within specific sections
-- Delete sections from character files
-- List all sections in a character file
-- Validate character file format compliance
+- Read or parse an existing `.character` file
+- Validate format and length limits (on a file, or on a draft before it is written)
+- Write a new file from assembled content (usually handed over by `character-builder`)
+- List, add, edit, or delete sections
 
-**When NOT to use this skill:**
-- Guided character creation (use character-building agents instead)
-- Creative character development assistance
-- Roleplay scenario generation
-- Character personality brainstorming
-
-**What makes this different:**
-This is a **technical tool** for file operations only. It manipulates the structure and content of `.character` files but does not provide creative guidance or character development assistance.
+**Not for:** creating or revising a character creatively (personality, voice, scenario, lorebook content). Use `character-builder`, which calls back into this skill for all file I/O.
 
 ## Character File Format
 
-### Structure Overview
+### Name and location
 
-Character files use a section-based format with the following components:
+- **The character name is the filename** without the `.character` extension: `Kira Thorne.character` → "Kira Thorne". Max 100 characters.
+- Default location: `~/Library/Application Support/HammerAI/RP-CHARS/`. Confirm the path with the user before writing.
 
-**1. Section Headers (Required)**
+### Section headers
+
+Every section starts with a header in this exact format:
+
 ```
 --- // <Section Name>
 ```
-Standard sections include:
-- `Introduction` - Brief tagline/summary (1 sentence, <80 chars)
-- `Personality` - Free-form character traits, background, and attributes (<4,000 chars)
-- `Scenario` - Roleplay setup, theme, and scene description (<1,800 chars)
-- `Example dialogs` - Sample conversations between character and user (<2,200 chars)
-- `First message` - Opening message to start the roleplay (<1,800 chars)
-- `System Prompt` - LLM instructions for roleplay behavior (no enforced limit)
-- `Lorebook` - Context injection triggers based on conversation keywords (<10,000 chars)
 
-Optional sections:
-- `Author Note` - Additional instructions or notes for the LLM (<2,000 chars)
-- `Display Name` - Alternative display name for the character (<200 chars)
-- `Alternate First Messages` - Alternative opening messages for variety (<10,000 chars)
+Nothing may appear before the first header. Content between headers is free-form and passed to the LLM as-is.
 
-**2. Template Variables**
-- `{{char}}` - Replaced with character name during roleplay
-- `{{user}}` - Replaced with user/player name during roleplay
+### Sections and limits
 
-**3. Lorebook Format (optional)**
+| Section | Max chars | Notes |
+|---|---|---|
+| `Introduction` | 80 | One-sentence tagline |
+| `Personality` | 4,000 | Traits, appearance, likes/dislikes |
+| `Scenario` | 1,800 | Theme, timeframe, opening scene |
+| `Example dialogs` | 2,200 | Sample exchanges (format below) |
+| `First message` | 1,800 | Opening message of the roleplay |
+| `System Prompt` | none | LLM behaviour instructions |
+| `Lorebook` | 10,000 | Optional keyword-triggered entries |
+| `Author Note` | 2,000 | Optional |
+| `Display Name` | 200 | Optional alternative display name |
+| `Alternate First Messages` | 10,000 | Optional |
 
-The Lorebook section enables context-aware information injection based on keywords detected in conversation.
+**Required:** `Introduction`, `Personality`, `Scenario`, `Example dialogs`, and `First message`. A missing one is an error. A missing `System Prompt` is a warning.
 
-**Entry Format:**
+**Counting rule:** the count covers the section's content with leading and trailing blank lines stripped. It excludes the header and includes inner whitespace and line breaks. Limits are inclusive (80/80 passes).
+
+Other section names are not part of the format. HammerAI will most likely ignore them, so the validator warns about them. Only add a custom section (such as `Abilities`) when the user asks for it explicitly, and tell them about the warning.
+
+### Template variables
+
+- `{{char}}`: replaced with the character name
+- `{{user}}`: replaced with the user's name
+
+Any other `{{...}}` is flagged.
+
+### Example dialogs
+
 ```
-trigger_terms | description
-```
-
-**Structure:**
-- **Trigger terms**: Comma-separated keywords that activate this entry
-  - Case-insensitive (lowercase recommended for consistency)
-  - Partial matching: "fire" matches "firefighter", "fireball", etc.
-  - Recommended maximum: 10 terms per entry for maintainability
-- **Pipe delimiter**: ` | ` separates terms from description
-- **Description**: Free-form text that gets injected into the prompt when triggered
-  - Can span multiple sentences
-  - Provide context the LLM needs when terms are mentioned
-
-**Activation Behavior:**
-- Scans last 4 messages (2 user messages + 2 character messages)
-- If any trigger term is detected, the description is added to the prompt once
-- Multiple term matches in same entry = single insertion
-- Overlapping terms across entries are allowed (each entry triggers independently)
-- Lore entries do not trigger other lore entries (descriptions aren't scanned for keywords)
-
-**Example Entries:**
-```
-sword, blade, weapon | A well-crafted longsword with an intricate hilt forged by master blacksmiths of the kingdom.
-tavern, inn, ale house | The Rusty Nail is a popular gathering spot for mercenaries. Known for strong ale and occasional brawls.
-gar, republic, galactic republic | The Galactic Republic was a democratic federal union spread across light-years of space, governed by the Galactic Senate on Coruscant.
+#{{user}}: *leans on the bar* "Busy night?"
+#{{char}}: *Esmeralda doesn't look up from the glass she's polishing.* "Always is."
 ```
 
-**4. Dialog Format (in Example dialogs section)**
+- Every dialog line starts with `#{{user}}:` or `#{{char}}:`
+- Actions and narration go in asterisks, speech goes in quotes
+- Separate exchanges with a blank line
+
+### Personality labels
+
+The `Personality` section usually uses labels such as `Appearance:`, `Personality traits:`, `Likes:`, `Dislikes:`. These are **conventional, not enforced**. Preserve whatever structure the file already uses.
+
+### Lorebook
+
+One entry per line:
+
 ```
-#{{user}}: *action in asterisks* "speech in quotes"
-#{{char}}: *Esmeralda nods slowly.* "I understand, thank you."
-```
-- `#{{user}}:` prefix for user dialog lines
-- `#{{char}}:` prefix for character dialog lines
-- Actions/narration enclosed in asterisks: `*sits down*`
-- Speech enclosed in quotes: `"Hello there"`
-
-**5. Content Structure**
-- Content within sections is **free-form** and passed directly to the LLM
-- The `Personality` section often uses structured labels for readability:
-  - `Scenario:`, `Appearance:`, `Likes:`, `Dislikes:`, `Personality traits:`, etc.
-  - These labels are **conventional, not enforced** - they help humans and LLMs parse info
-- Other sections can use whatever structure suits the content
-
-### Format Rules
-
-**Must-have elements:**
-- Section headers must use exact format: `--- // <Section Name>`
-- Dialog lines must use `#{{user}}:` or `#{{char}}:` prefixes
-- Actions must be in asterisks: `*description*`
-- Speech must be in quotes: `"dialog"`
-- Lorebook entries must use pipe delimiter: `terms | description`
-- Lorebook entries must have at least one term and a description
-
-**Optional but recommended:**
-- Structured labels in Personality section for clarity
-- Blank lines between sections for readability
-- Consistent formatting within sections
-- Lorebook terms in lowercase for consistency
-- Maximum 10 terms per lorebook entry for maintainability
-- Intentional design when using overlapping terms across entries
-
-### Character Limits
-
-Character files enforce the following length constraints to ensure compatibility with roleplay systems:
-
-**Enforced constraints:**
-- **Character name:** <100 characters
-- **Introduction section:** <80 characters (brief tagline)
-- **Personality section:** <4,000 characters
-- **Scenario section:** <1,800 characters
-- **Example dialogs section:** <2,200 characters
-- **First message section:** <1,800 characters
-- **System Prompt section:** No enforced limit
-- **Lorebook section:** <10,000 characters
-
-**Optional section constraints:**
-- **Author Note section:** <2,000 characters
-- **Display Name:** <200 characters
-- **Alternate First Messages section:** <10,000 characters
-
-**Notes:**
-- Character counts include all text within the section (excluding section header)
-- Whitespace and line breaks count toward the limit
-- Exceeding limits will be flagged during validation
-- Validation provides character counts to help with trimming
-
-## Capabilities
-
-### 1. Read Character File
-
-Parse and display a `.character` file's structure and content.
-
-**Operation:**
-- Load file from specified path
-- Parse sections by `--- //` delimiter
-- Display structure with section names and content
-- Preserve exact formatting and whitespace
-
-**Example invocation:**
-- "Read the character file at /path/to/character.character"
-- "Show me the structure of Esmeralda.character"
-- "Parse this character file and display its sections"
-
-**Output format:**
-```
-Character File: filename.character
-Sections found: 5
-
---- // Personality
-[content exactly as stored]
-
---- // Scenario
-[content exactly as stored]
-
-[etc.]
+trigger terms, comma separated | description injected when a term appears
 ```
 
-### 2. Write New Character File
+**How entries fire:**
+- The last 4 messages (2 user and 2 character) are scanned for terms, case-insensitive, with **partial matching**: `fire` matches "fireball".
+- A hit injects the description into the prompt once, with no framing. Several matching terms still give one insertion.
+- Entries fire independently. Descriptions are not scanned, so lore never triggers other lore.
 
-Create a new `.character` file from structured data.
+**Format rules** (the validator enforces them):
+- ` | ` (space, pipe, space) separates terms from description. Error if missing.
+- At least one term and a non-empty description. Error if missing.
+- Lowercase terms, max 10 per entry. Warning.
+- Terms under 4 characters partial-match inside common words (`gar` → "garden", "cigar"). Warning.
+- The description should echo at least one of its terms. Warning.
+- Terms that appear in more than one entry. Warning: check that it's intentional.
 
-**Operation:**
-- Accept file path and section data
-- Validate section names and structure
-- Format content with proper delimiters
-- Write to specified location
-- Report success/failure
+Whether each description *reads well on its own* is a content question. `character-builder` owns that.
 
-**Example invocation:**
-- "Create a new character file at /path/to/newchar.character with sections: Personality, Scenario"
-- "Write a character file with the following structure..."
+## Validation: always use the script
 
-**Input format:**
-```
-Path: /path/to/character.character
-Sections:
-  - name: Personality
-    content: |
-      Scenario: ...
-      Appearance: ...
-  - name: Scenario
-    content: |
-      Theme: ...
-```
+Never count characters by hand or estimate them. Run the bundled validator:
 
-### 3. List Sections
+```bash
+# Existing file (name = filename stem)
+python3 "${CLAUDE_SKILL_DIR}/scripts/validate_character.py" "/path/to/Kira Thorne.character"
 
-Display all section names present in a character file.
-
-**Operation:**
-- Parse file for `--- //` headers
-- Extract section names
-- Return ordered list
-
-**Example invocation:**
-- "List all sections in character.character"
-- "What sections does this character file have?"
-- "Show me the section structure"
-
-**Output format:**
-```
-Sections in character.character:
-1. Personality
-2. Scenario
-3. Example dialogs
-4. First message
-5. System Prompt
+# Draft that is not written yet
+python3 "${CLAUDE_SKILL_DIR}/scripts/validate_character.py" --stdin --name "Kira Thorne" <<'EOF'
+--- // Introduction
+...
+EOF
 ```
 
-### 4. Add Section
+Claude Code substitutes `${CLAUDE_SKILL_DIR}` with this skill's directory when it loads the skill. It is not a shell variable, so use the command exactly as written.
 
-Insert a new section into an existing character file.
+It prints per-section counts against the limits, then errors and warnings, then `Status: VALID|INVALID`. Exit code 0 means valid (warnings allowed), 1 means errors. Relay its output. Don't paraphrase counts.
 
-**Operation:**
-- Validate section name doesn't already exist
-- Insert section header with proper format
-- Add content below header
-- Append to end of file (or specify position if needed)
-- Preserve existing content exactly
+## Operations
 
-**Example invocation:**
-- "Add a new section called 'Abilities' to character.character"
-- "Insert a section named 'Background' with content..."
+| Operation | How |
+|---|---|
+| **Read** | Read the file, then show its sections in order, exactly as stored. Run the validator and append its summary. |
+| **List sections** | Run the validator. The `Sections:` line lists them in order. |
+| **Write new** | Confirm the path and filename (= character name). Validate the content with `--stdin` **first**. If there are errors, stop and report them. Otherwise write with the Write tool and validate the written file. |
+| **Add section** | Check that the section doesn't exist yet. Append `--- // <Name>` plus content at the end (or where the user asks). Leave the other sections untouched. Validate. |
+| **Edit section** | Read the file. Replace only that section's content with the Edit tool, keeping the header. Validate. |
+| **Delete section** | Remove the header and everything up to the next header. Validate. |
+| **Validate** | Run the script and relay its output. |
 
-**Input format:**
-```
-File: /path/to/character.character
-Section name: New Section
-Content: |
-  Section content here
-  Multiple lines supported
-```
+Rules for every operation:
+- Preserve the content exactly as given. No automatic reformatting or "corrections".
+- For reads, edits, and deletes, the file must exist. For writes, the parent directory must exist.
+- After any change, re-run the validator and show the result.
 
-### 5. Edit Section Content
+## Errors
 
-Modify content within an existing section.
-
-**Operation:**
-- Locate section by name
-- Replace section content while preserving header
-- Maintain exact formatting of other sections
-- Validate section exists before edit
-
-**Example invocation:**
-- "Edit the Personality section in character.character"
-- "Replace the content of the Scenario section"
-- "Update the First message section with new text"
-
-**Input format:**
-```
-File: /path/to/character.character
-Section: Personality
-New content: |
-  Updated content here
-  Replaces entire section content
-```
-
-### 6. Delete Section
-
-Remove a section entirely from a character file.
-
-**Operation:**
-- Locate section by name
-- Remove section header and all content until next section
-- Preserve all other sections exactly
-- Validate section exists before deletion
-
-**Example invocation:**
-- "Delete the Example dialogs section from character.character"
-- "Remove the System Prompt section"
-
-**Input format:**
-```
-File: /path/to/character.character
-Section to delete: Example dialogs
-```
-
-### 7. Validate Character File
-
-Check a character file for format compliance and character limits.
-
-**Operation:**
-- Verify section headers use correct format
-- Check for template variable usage
-- Validate dialog format in Example dialogs section
-- Check character limits for all constrained sections
-- Report any formatting issues found
-- Provide warnings (not errors) for missing conventional sections
-- Display character counts for limited sections
-
-**Example invocation:**
-- "Validate the format of character.character"
-- "Check if this character file has correct syntax"
-- "Verify character.character follows the format rules"
-
-**Output format:**
-```
-Validation Results for character.character:
-
-✓ Section headers properly formatted
-✓ Template variables used correctly
-✓ Dialog format correct in Example dialogs
-✓ Lorebook entries use proper pipe delimiter format
-
-Character Limits:
-✓ Character name within limit (47/100 chars)
-✓ Introduction within limit (68/80 chars)
-✓ Personality within limit (2,840/4,000 chars)
-✓ Scenario within limit (1,203/1,800 chars)
-✓ Example dialogs within limit (1,987/2,200 chars)
-✓ First message within limit (1,421/1,800 chars)
-✓ Lorebook within limit (842/10,000 chars)
-
-Optional Sections:
-✓ Author Note within limit (1,200/2,000 chars)
-✓ Display Name within limit (24/200 chars)
-⊘ Alternate First Messages not present (optional)
-
-⚠ Warning: No System Prompt section found (optional but recommended)
-⚠ Warning: Lorebook entry has 12 terms (recommend max 10 for maintainability)
-⚠ Warning: Uppercase terms detected in Lorebook (recommend lowercase)
-⚠ Warning: Overlapping terms found across lorebook entries (verify intentional)
-
-Status: VALID (0 errors, 4 warnings)
-```
-
-## Tool Usage Patterns
-
-### Reading Character Files
-```
-Use Read tool:
-Read file_path: /path/to/character.character
-
-Parse structure:
-- Split on "--- //" to identify sections
-- Extract section names from headers
-- Preserve content exactly as stored
-```
-
-### Writing Character Files
-```
-Use Write tool:
-file_path: /path/to/character.character
-content: |
-  --- // Personality
-
-  [personality content]
-
-  --- // Scenario
-
-  [scenario content]
-
-  [additional sections...]
-```
-
-### Editing Sections
-```
-Workflow:
-1. Read entire file
-2. Parse into sections
-3. Locate target section
-4. Replace section content
-5. Reconstruct file
-6. Write updated file
-```
-
-### Format Validation
-```
-Use Grep to search for:
-- Section headers: pattern "^--- // "
-- Template variables: pattern "{{(char|user)}}"
-- Dialog prefixes: pattern "^#{{(char|user)}}:"
-- Actions: pattern "\*[^*]+\*"
-- Speech: pattern '"[^"]+"'
-
-Lorebook-specific validation:
-- Entry format: pattern "^[^|]+ \| .+$" (terms | description)
-- Pipe delimiter: pattern " \| "
-- Term count: split on commas, count (warn if >10)
-- Case check: detect uppercase letters in terms section
-- Overlap detection: collect all terms across entries, identify duplicates
-```
+- **File not found:** "Character file not found at [path]."
+- **Section already exists** (add): "Section '[name]' already exists. Use edit to change it."
+- **Section not found** (edit/delete): "Section '[name]' not found. Available: [list]."
+- **Validator errors on write:** don't write. Report the errors and hand them back to the caller (usually `character-builder`) for trimming or fixing.
+- **Malformed file:** parse on a best-effort basis, report the validator's errors, and suggest fixes.
 
 ## Example Character File
+
+`Mara Vell.character`:
 
 ```
 --- // Introduction
 
-Sarcastic warrior seeking redemption through protection of the innocent.
+Sarcastic mercenary seeking redemption by protecting those she once hunted.
 
 --- // Personality
 
-Scenario: medieval fantasy setting, female warrior, met {{user}} at a tavern.
-Appearance: human, female, age 28, auburn hair, green eyes, 5'8 tall, athletic build, scar on left cheek.
-Personality traits: brave, loyal, sarcastic, protective, independent.
-Likes: combat training, helping others, ale, honesty.
+Appearance: human, female, 28, auburn hair, green eyes, athletic build, scar across her left cheek.
+Personality traits: brave, loyal, sarcastic, protective, slow to trust.
+Likes: sword drills, honest people, strong ale.
 Dislikes: cowardice, deception, idle nobility.
 
 --- // Scenario
 
 Theme: adventure, friendship.
-Timeframe: medieval fantasy.
+Timeframe: medieval fantasy, the Kingdom of Aldoria.
 Writing quality: direct narrative, witty dialogue.
-Scene: {{char}} sits at a tavern table, cleaning her sword when {{user}} enters.
+Scene: {{char}} sits alone at a table in the Rusty Nail tavern, cleaning her sword, when {{user}} enters.
 
 --- // Example dialogs
 
 #{{user}}: "Mind if I join you?"
-#{{char}}: *Looks up from her blade, one eyebrow raised.* "Depends. You looking for trouble or trying to avoid it?"
+#{{char}}: *Mara looks up from her blade, one eyebrow raised.* "Depends. You looking for trouble or trying to avoid it?"
 
-#{{user}}: "Just looking for company, actually."
-#{{char}}: *Gestures to the empty chair with her sword.* "Fair enough. Sit. But if you're boring, I'm leaving."
+#{{user}}: "Just looking for company."
+#{{char}}: *She nudges the empty chair out with her boot.* "Fair enough. Sit. But if you're boring, I'm leaving."
 
 --- // First message
 
-*{{char}} glances up as you enter the tavern, her hand resting on the pommel of her sword. After a moment's assessment, she returns to cleaning her blade.* "Either sit or stop hovering. You're blocking the light."
+*The door of the Rusty Nail swings open and Mara's hand drifts to her sword's pommel. After a moment's assessment she goes back to cleaning the blade.* "Either sit or stop hovering. You're blocking the light."
 
 --- // System Prompt
 
-You are {{char}}. You will never respond as/for {{user}}. Maintain consistent personality across all responses. Actions and thoughts go in asterisks. Speech goes in quotes. Be witty and direct in character voice.
+You are {{char}}. Never write actions, speech, or thoughts for {{user}}. Actions go in asterisks, speech in quotes. Keep Mara witty, guarded, and quietly protective.
 
 --- // Lorebook
 
-sword, blade, weapon | A well-crafted longsword with an intricate hilt forged by master blacksmiths of the kingdom. The blade is inscribed with ancient runes that glow faintly in moonlight.
-tavern, inn, rusty nail | The Rusty Nail is the most popular tavern in the merchant district. Known for strong ale, occasional brawls, and being a gathering spot for mercenaries and adventurers seeking work.
-kingdom, realm, crown | The Kingdom of Aldoria has stood for three centuries under the rule of House Blackwood. Recent tensions with neighboring realms have increased military presence in border towns.
+mara's sword, longsword, runeblade | Mara's sword is a runeblade longsword taken from the knight she failed to protect. Its runes glow faintly in moonlight, and she never lets anyone else hold it.
+rusty nail, tavern | The Rusty Nail is the busiest tavern in Aldoria's merchant district, where mercenaries find work, strong ale, and the occasional brawl.
+aldoria, kingdom, crown | The Kingdom of Aldoria has stood for three centuries under House Blackwood. Border tensions have filled its towns with soldiers and sellswords.
 ```
 
-## Operations Checklist
+## Working with character-builder
 
-Before performing any operation, verify:
+`character-builder` decides *what* to write. This skill performs every file operation it needs:
 
-**File Operations:**
-- [ ] Valid file path provided
-- [ ] Proper file extension (`.character`)
-- [ ] File exists (for read/edit/delete operations)
-- [ ] Parent directory exists (for write operations)
-
-**Section Operations:**
-- [ ] Section name is valid (no special characters in name)
-- [ ] Section exists (for edit/delete operations)
-- [ ] Section doesn't exist (for add operations)
-- [ ] Content is properly formatted
-
-**Format Validation:**
-- [ ] Section headers use exact format: `--- // <Name>`
-- [ ] Template variables use correct syntax: `{{char}}` `{{user}}`
-- [ ] Dialog lines use correct prefixes: `#{{char}}:` `#{{user}}:`
-- [ ] Actions in asterisks, speech in quotes (in Example dialogs)
-
-**Character Limit Validation:**
-- [ ] Character name <100 characters
-- [ ] Introduction section <80 characters
-- [ ] Personality section <4,000 characters
-- [ ] Scenario section <1,800 characters
-- [ ] Example dialogs section <2,200 characters
-- [ ] First message section <1,800 characters
-- [ ] Lorebook section <10,000 characters
-- [ ] Author Note section <2,000 characters (if present)
-- [ ] Display Name <200 characters (if present)
-- [ ] Alternate First Messages section <10,000 characters (if present)
-
-## Error Handling
-
-**Common errors and responses:**
-
-1. **File not found**
-   - Response: "Error: Character file not found at [path]. Please verify the path and try again."
-
-2. **Invalid section format**
-   - Response: "Error: Section header must use format '--- // <Section Name>'. Found: [actual format]"
-
-3. **Section already exists** (when adding)
-   - Response: "Error: Section '[name]' already exists in character file. Use edit operation to modify existing section."
-
-4. **Section not found** (when editing/deleting)
-   - Response: "Error: Section '[name]' not found in character file. Available sections: [list]"
-
-5. **Malformed character file**
-   - Response: "Warning: Character file does not follow standard format. Proceeding with best-effort parsing. Validation recommended."
-
-## Notes
-
-- This skill performs **technical operations only** - it does not provide creative guidance
-- All content is preserved exactly as provided - no automatic formatting or corrections
-- Validation is advisory - files can be valid even with warnings
-- Section order matters for readability but not for functionality
-- The Personality section's internal structure (Scenario:, Appearance:, etc.) is **conventional only**
-- Character files are plain text - can be edited with any text editor
-- Default character file location: `/Users/jurriendokter/Library/Application Support/HammerAI/RP-CHARS/`
-
-**Lorebook-specific notes:**
-- Lorebook activates by scanning last 4 messages (2 user + 2 character messages)
-- Partial matching: "fire" in terms will match "firefighter", "fireball", etc.
-- Case-insensitive matching (lowercase terms recommended for consistency)
-- Each entry triggers independently - overlapping terms across entries is allowed
-- Descriptions are inserted once per entry regardless of multiple term matches
-- Lore entries do not trigger other lore entries (descriptions not scanned for keywords)
-
-## Integration with Character Building
-
-This skill is designed to be used **alongside** character building agents/tools:
-
-- **Character Building Agents**: Guide users through creative character development
-- **This Skill**: Handle the technical file operations requested by those agents
-- **Workflow**: Agent decides what to write → calls this skill → skill performs file operation
-
-The skill responds to direct file operation requests and provides structured, reliable file manipulation for character definition workflows.
+- **New character:** the builder hands over the assembled content and a name. Validate with `--stdin`, then write `<Name>.character`.
+- **Refining an existing character:** the builder asks for a read and a validation, then hands back the changed sections one at a time for editing.
+- **Drafts:** the builder can ask for a `--stdin` validation at any point to get exact counts.
